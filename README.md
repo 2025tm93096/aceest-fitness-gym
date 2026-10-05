@@ -1,4 +1,4 @@
-# ACEest Fitness & Gym — Automated CI/CD Platform
+# Aceest Fitness & Gym — Automated CI/CD Platform
 
 Production-ready backend API service for gym operations, containerized with Docker and verified via GitHub Actions and Jenkins automated pipelines.
 
