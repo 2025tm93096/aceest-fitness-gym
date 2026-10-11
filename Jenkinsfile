@@ -6,6 +6,10 @@ pipeline {
         TAG       = "${env.BUILD_NUMBER}"
     }
 
+    triggers {
+        pollSCM('H/5 * * * *')
+    }
+
     stages {
         stage('SCM Checkout') {
             steps {
