@@ -44,6 +44,18 @@ pipeline {
                 '''
             }
         }
+
+        stage('SonarQube Analysis') {
+        steps {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                sh '''
+                    export PATH=/opt/sonar-scanner/bin: $PATH
+                    sonar-scanner \
+                    -Dsonar.host.url=http://localhost:9000 \
+                    -Dsonar.login=$SONAR_TOKEN
+                '''
+            }
+        }
     }
 
     post {
