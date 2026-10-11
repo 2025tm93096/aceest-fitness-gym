@@ -2,8 +2,10 @@ pipeline {
     agent any
 
     environment {
-        APP_IMAGE = 'aceest-fitness-app'
-        TAG       = "${env.BUILD_NUMBER}"
+        APP_IMAGE     = 'aceest-fitness-app'
+        APP_CONTAINER = 'aceest-fitness-app'
+        APP_PORT      = '5000'
+        TAG           = "${env.BUILD_NUMBER}"
     }
 
     triggers {
@@ -57,6 +59,19 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy Docker Container') {
+            steps {
+                sh '''
+                    docker rm -f ${APP_CONTAINER} || true
+                    docker run -d \\
+                        --name ${APP_CONTAINER} \\
+                        --restart unless-stopped \\
+                        -p ${APP_PORT}:5000 \\
+                        ${APP_IMAGE}:${TAG}
+                '''
+            }
+        }
     }
 
     post {
@@ -64,7 +79,7 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Jenkins Pipeline #${env.BUILD_NUMBER} passed successfully."
+            echo "Jenkins Pipeline #${env.BUILD_NUMBER} deployed successfully."
         }
         failure {
             echo "Jenkins Pipeline #${env.BUILD_NUMBER} failed."
