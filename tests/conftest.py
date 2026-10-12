@@ -1,6 +1,7 @@
 import os
 import tempfile
 import pytest
+import app.app as app_module
 from app.app import app as flask_app, init_db
 
 
@@ -8,7 +9,7 @@ from app.app import app as flask_app, init_db
 def client():
     db_fd, db_path = tempfile.mkstemp()
     flask_app.config["TESTING"] = True
-    flask_app.DB_NAME = db_path
+    app_module.DB_NAME = db_path
     os.environ["ACEEST_DB"] = db_path
 
     with flask_app.app_context():

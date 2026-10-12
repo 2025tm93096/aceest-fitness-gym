@@ -8,6 +8,12 @@ def test_health_check(client):
     assert data["status"] == "UP"
 
 
+def test_dashboard_page(client):
+    res = client.get("/dashboard")
+    assert res.status_code == 200
+    assert b"ACEest Fitness Dashboard" in res.data
+
+
 def test_get_programs(client):
     res = client.get("/api/v1/programs")
     assert res.status_code == 200

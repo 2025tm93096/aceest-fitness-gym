@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 DB_NAME = os.environ.get("ACEEST_DB", "aceest_fitness.db")
@@ -57,6 +57,11 @@ def init_db():
 
 
 init_db()
+
+
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    return render_template("index.html")
 
 
 @app.route("/", methods=["GET"])
