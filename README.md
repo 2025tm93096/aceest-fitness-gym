@@ -22,7 +22,8 @@ pip install -r requirements.txt
 python -m app.app
 ```
 
-The API is available at `http://localhost:5000`. The application creates the
+The Flask dashboard is available at `http://localhost:5000/dashboard`. The API
+health endpoint is available at `http://localhost:5000/`. The application creates the
 SQLite database automatically on startup. By default it uses
 `aceest_fitness.db`; set `ACEEST_DB` to use another path:
 
@@ -36,9 +37,19 @@ For production-style local serving, use Gunicorn:
 gunicorn --bind 0.0.0.0:5000 --workers 2 app.app:app
 ```
 
-## 2. API Reference
+## 2. Frontend and API
 
-All endpoints return JSON.
+The Flask frontend is rendered from `app/templates/index.html` and uses the API
+to load clients and programs, create clients, log adherence progress, and log
+workouts. Open the dashboard at:
+
+```text
+http://localhost:5000/dashboard
+```
+
+### API Reference
+
+API endpoints return JSON.
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
@@ -49,6 +60,8 @@ All endpoints return JSON.
 | `GET` | `/api/v1/clients/<name>` | Get one client by name |
 | `POST` | `/api/v1/clients/<name>/progress` | Log adherence progress |
 | `POST` | `/api/v1/clients/<name>/workouts` | Log a workout |
+
+The dashboard route returns the HTML frontend rather than JSON.
 
 ### Create a Client
 
@@ -89,9 +102,13 @@ curl -X POST http://localhost:5000/api/v1/clients/Karthik%20Raj/workouts \
 Run the automated tests and lint checks locally:
 
 ```bash
-pytest tests/ -v
+python -m pytest tests/ -v
 flake8 app/ tests/ --max-line-length=120
 ```
+
+The test suite includes API behavior and dashboard delivery tests. Use
+`./venv/bin/python -m pytest tests/ -v` when the virtual environment is not
+activated.
 
 ## 4. Docker
 
@@ -103,7 +120,9 @@ docker run --rm -p 5000:5000 aceest-fitness-app
 ```
 
 The container listens on port `5000` and runs Gunicorn with two workers. To
-persist the SQLite database outside the container, mount a directory and set
+open the frontend after starting the container, visit
+`http://localhost:5000/dashboard`. To persist the SQLite database outside the
+container, mount a directory and set
 `ACEEST_DB` to a file in that directory:
 
 ```bash
@@ -128,13 +147,17 @@ targeting `main`. It installs dependencies, runs Flake8, builds the Docker
 image, and runs Pytest inside the image.
 
 Jenkins follows the same flow through the `Jenkinsfile`: checkout, lint,
-Docker build, and in-container regression tests. Jenkins requires Python 3,
-Docker, and permission to run Docker commands on the build agent.
+Docker build, in-container regression tests, SonarQube analysis, and Docker
+deployment. The deployment runs the image as `aceest-fitness-app` and publishes
+port `5000` on the Jenkins agent. Jenkins requires Python 3, Docker, permission
+to run Docker commands, a configured `sonar-token` credential, and an available
+SonarScanner installation.
 
 ## 6. Project Structure
 
 ```text
-app/app.py              Flask application and SQLite persistence
+app/app.py              Flask application, API routes, and SQLite persistence
+app/templates/index.html Flask-rendered frontend dashboard
 tests/                  Pytest test suite and fixtures
 Dockerfile              Multi-stage production container build
 Jenkinsfile             Jenkins CI pipeline
