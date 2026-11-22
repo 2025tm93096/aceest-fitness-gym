@@ -58,7 +58,7 @@ replace SQLite before multi-node production scaling.
 are environment-specific and must not be stored in source control. The Jenkins
 pipeline refers to Jenkins credentials by ID, and the repository contains no
 tokens, kubeconfig files, or passwords. Jenkins must be configured with
-`dockerhub-credentials`, `kubeconfig`, and a SonarQube server/scanner before
+`dockerhub-credentials`, `kuberconfig`, and a SonarQube server/scanner before
 the publish and deployment stages can run.
 
 ## Key automation outcomes

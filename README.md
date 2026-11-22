@@ -171,7 +171,7 @@ Scanner, JUnit, and Workspace Cleanup plugins. Add:
 
 - A username/password credential named `dockerhub-credentials` (use a Docker
   Hub access token as the password).
-- A secret-file credential named `kubeconfig` for a cluster reachable by the
+- A secret-file credential named `kuberconfig` for a cluster reachable by the
   Jenkins agent.
 - A SonarQube server named `SonarQube` and scanner tool named `SonarScanner`.
   Configure the SonarQube webhook to call
