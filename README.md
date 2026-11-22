@@ -162,6 +162,10 @@ blue-green, canary, A/B, or shadow from the Jenkins `DEPLOYMENT_STRATEGY`
 parameter. Image tags include the Jenkins build number and short Git commit
 SHA.
 
+If SonarQube is temporarily unavailable, set the Jenkins `SKIP_SONAR`
+parameter to `true` for that run only. It defaults to `false`; run the pipeline
+again with SonarQube enabled before collecting final quality-gate evidence.
+
 Configure Jenkins with the Pipeline, Git, Credentials Binding, SonarQube
 Scanner, JUnit, and Workspace Cleanup plugins. Add:
 

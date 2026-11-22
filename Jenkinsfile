@@ -18,6 +18,11 @@ pipeline {
             choices: ['rolling', 'blue-green', 'canary', 'ab', 'shadow'],
             description: 'Kubernetes deployment and traffic strategy'
         )
+        booleanParam(
+            name: 'SKIP_SONAR',
+            defaultValue: false,
+            description: 'Temporarily skip SonarQube while it is unavailable; disable before final validation'
+        )
     }
 
     triggers {
@@ -75,6 +80,11 @@ pipeline {
         }
 
         stage('SonarQube Quality Gate') {
+            when {
+                expression {
+                    !params.SKIP_SONAR
+                }
+            }
             steps {
                 script {
                     def scannerHome = tool 'SonarScanner'
