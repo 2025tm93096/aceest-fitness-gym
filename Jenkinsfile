@@ -64,6 +64,7 @@ pipeline {
                             docker run --rm \
                                 --user "$(id -u):$(id -g)" \
                                 -e ACEEST_DB=/tmp/aceest-test.db \
+                                -e COVERAGE_FILE=/tmp/.coverage \
                                 -v "$WORKSPACE/reports:/reports" \
                                 "$LOCAL_IMAGE:$IMAGE_TAG" \
                                 sh -c 'flake8 app/ tests/ --max-line-length=120 && pytest tests/ -v --junitxml=/reports/junit.xml --cov=app --cov-report=xml:/reports/coverage.xml'
