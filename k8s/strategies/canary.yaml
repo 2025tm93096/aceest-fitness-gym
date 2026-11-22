@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-canary
+  namespace: aceest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aceest-canary
+  template:
+    metadata:
+      labels:
+        app: aceest-canary
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: app
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: ACEEST_DB
+              value: /data/aceest_fitness.db
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aceest-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-canary
+  namespace: aceest
+spec:
+  selector:
+    app: aceest-canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -143,17 +143,133 @@ docker run --rm aceest-fitness-app pytest tests/ -v
 ## 5. CI/CD
 
 GitHub Actions runs on pushes to `main` and `dev`, and on pull requests
-targeting `main`. It installs dependencies, runs Flake8, builds the Docker
-image, and runs Pytest inside the image.
+targeting `main`. It runs Flake8 and Pytest with coverage, publishes JUnit and
+coverage reports as workflow artifacts, then builds the Docker image and runs
+the tests inside it.
 
-Jenkins follows the same flow through the `Jenkinsfile`: checkout, lint,
-Docker build, in-container regression tests, SonarQube analysis, and Docker
-deployment. The deployment runs the image as `aceest-fitness-app` and publishes
-port `5000` on the Jenkins agent. Jenkins requires Python 3, Docker, permission
-to run Docker commands, a configured `sonar-token` credential, and an available
-SonarScanner installation.
+Use `main` for stable releases and feature branches or `dev` for work in
+progress. Tag release commits with semantic versions, for example:
 
-## 6. Project Structure
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+The `Jenkinsfile` polls Git every five minutes and runs containerized lint and
+tests, SonarQube analysis with a quality gate, Docker Hub image publishing, and
+a selectable Kubernetes deployment strategy on `main`. Choose rolling,
+blue-green, canary, A/B, or shadow from the Jenkins `DEPLOYMENT_STRATEGY`
+parameter. Image tags include the Jenkins build number and short Git commit
+SHA.
+
+Configure Jenkins with the Pipeline, Git, Credentials Binding, SonarQube
+Scanner, JUnit, and Workspace Cleanup plugins. Add:
+
+- A username/password credential named `dockerhub-credentials` (use a Docker
+  Hub access token as the password).
+- A secret-file credential named `kubeconfig` for a cluster reachable by the
+  Jenkins agent.
+- A SonarQube server named `SonarQube` and scanner tool named `SonarScanner`.
+  Configure the SonarQube webhook to call
+  `https://<jenkins-url>/sonarqube-webhook/`.
+- Docker, kubectl, and curl on the Jenkins agent, with permission to access
+  Docker and the Kubernetes cluster.
+
+The pipeline defaults to the Docker Hub repository
+`2025tm93096/aceest-fitness-app`; change the Jenkins `DOCKERHUB_REPO` parameter
+if you publish under another account.
+
+## 6. Kubernetes deployment
+
+The default manifests target a local Minikube cluster and use a persistent
+volume for the SQLite database. Start the cluster and apply the rolling-update
+configuration:
+
+```bash
+minikube start --driver=docker
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/storage.yaml
+kubectl apply -f k8s/service.yaml
+sed 's|IMAGE_PLACEHOLDER|2025tm93096/aceest-fitness-app:v1.0.0|g' \
+  k8s/deployment.yaml | kubectl apply -f -
+kubectl rollout status deployment/aceest-fitness -n aceest
+```
+
+Push the referenced image to Docker Hub first. For access from macOS with Minikube's Docker driver, forward the Service to a
+local port:
+
+```bash
+kubectl port-forward -n aceest service/aceest-fitness 5000:80
+```
+
+While that command is running, open `http://localhost:5000/` or
+`http://localhost:5000/dashboard`. The NodePort is `30084`; use
+`minikube service aceest-fitness -n aceest --url` on platforms where the
+Minikube node IP is reachable from the host.
+
+For private Docker Hub repositories, configure an `imagePullSecret` in the
+`aceest` namespace and reference it from the Deployment pod specification.
+
+The deployment uses two replicas, readiness/liveness probes, resource limits,
+and Kubernetes rolling updates (`maxUnavailable: 0`). To roll back a failed
+or unhealthy update:
+
+```bash
+sh k8s/rollback.sh rolling
+```
+
+### Progressive delivery strategies
+
+The Jenkins `DEPLOYMENT_STRATEGY` parameter invokes `k8s/deploy.sh` to
+configure the selected strategy. The supporting manifests under
+`k8s/strategies/` can also be applied manually. Blue-green promotion waits for
+the candidate deployment to be ready before switching the Service; the
+previous slot is recorded so it can be restored:
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/storage.yaml
+sed 's|IMAGE_PLACEHOLDER|2025tm93096/aceest-fitness-app:v1.0.0|g' \
+  k8s/strategies/blue-green.yaml | kubectl apply -f -
+kubectl set image deployment/aceest-green \
+  app=2025tm93096/aceest-fitness-app:v1.0.1 -n aceest
+sh k8s/promote-blue-green.sh green
+sh k8s/rollback.sh blue-green
+```
+
+For canary and A/B routing, enable the Minikube NGINX Ingress add-on and apply
+the candidate workload with the desired image. Apply
+`k8s/ingress/stable.yaml`, then choose **one** of
+`k8s/strategies/canary-ingress.yaml` (10% canary traffic) or
+`k8s/strategies/ab-test.yaml` (requests with
+`X-Aceest-Experiment: variant-b` go to the candidate). These are alternative
+Ingress rules and should not be active together. Use
+`sh k8s/rollback.sh canary` or `sh k8s/rollback.sh ab` to stop candidate
+traffic.
+
+For shadow traffic, deploy `k8s/strategies/shadow.yaml`, replace the stable
+Ingress with `k8s/strategies/shadow-ingress.yaml`, and monitor the shadow
+deployment separately. Shadow requests use an isolated ephemeral database so
+mirrored write requests cannot alter production data. Disable mirroring with
+`sh k8s/rollback.sh shadow`.
+
+Render the candidate manifests with the intended image tag before applying
+them, for example:
+
+```bash
+sed 's|IMAGE_PLACEHOLDER|2025tm93096/aceest-fitness-app:v1.0.1|g' \
+  k8s/strategies/canary.yaml | kubectl apply -f -
+sed 's|IMAGE_PLACEHOLDER|2025tm93096/aceest-fitness-app:v1.0.1|g' \
+  k8s/strategies/shadow.yaml | kubectl apply -f -
+```
+
+The sample uses SQLite on a single-node/local cluster. For multi-node or
+production cloud deployment, move persistence to a managed database before
+scaling or using concurrent traffic strategies; a shared SQLite file is not a
+production database design. Ingress examples require an NGINX Ingress
+controller.
+
+## 7. Project Structure
 
 ```text
 app/app.py              Flask application, API routes, and SQLite persistence
@@ -162,5 +278,8 @@ tests/                  Pytest test suite and fixtures
 Dockerfile              Multi-stage production container build
 Jenkinsfile             Jenkins CI pipeline
 .github/workflows/      GitHub Actions CI/CD workflow
+k8s/                    Kubernetes deployment and strategy manifests
+k8s/rollback.sh         Rollback helper for supported strategies
+docs/                   Assignment 2 report and evidence checklist
 requirements.txt        Python runtime and development dependencies
 ```

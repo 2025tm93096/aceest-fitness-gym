@@ -8,6 +8,12 @@ def test_health_check(client):
     assert data["status"] == "UP"
 
 
+def test_readiness_check(client):
+    res = client.get("/readyz")
+    assert res.status_code == 200
+    assert res.json["status"] == "UP"
+
+
 def test_dashboard_page(client):
     res = client.get("/dashboard")
     assert res.status_code == 200

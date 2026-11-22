@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-blue
+  namespace: aceest
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      slot: blue
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        slot: blue
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: app
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: ACEEST_DB
+              value: /data/aceest_fitness.db
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aceest-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-green
+  namespace: aceest
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      slot: green
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        slot: green
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: app
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: ACEEST_DB
+              value: /data/aceest_fitness.db
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aceest-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness
+  namespace: aceest
+spec:
+  type: NodePort
+  selector:
+    app: aceest-fitness
+    slot: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30084

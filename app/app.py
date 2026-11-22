@@ -73,6 +73,19 @@ def health_check():
     }), 200
 
 
+@app.route("/readyz", methods=["GET"])
+def readiness_check():
+    conn = get_db_connection()
+    try:
+        conn.execute("SELECT 1")
+    except sqlite3.Error:
+        conn.close()
+        app.logger.exception("Database readiness check failed")
+        return jsonify({"status": "DOWN"}), 503
+    conn.close()
+    return jsonify({"status": "UP"}), 200
+
+
 @app.route("/api/v1/programs", methods=["GET"])
 def get_programs():
     return jsonify({"programs": PROGRAMS_CONFIG}), 200

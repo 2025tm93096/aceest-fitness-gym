@@ -1,75 +1,136 @@
 pipeline {
     agent any
 
-    environment {
-        APP_IMAGE     = 'aceest-fitness-app'
-        APP_CONTAINER = 'aceest-fitness-app'
-        APP_PORT      = '5000'
-        TAG           = "${env.BUILD_NUMBER}"
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    parameters {
+        string(
+            name: 'DOCKERHUB_REPO',
+            defaultValue: '2025tm93096/aceest-fitness-app',
+            description: 'Docker Hub repository for versioned application images'
+        )
+        choice(
+            name: 'DEPLOYMENT_STRATEGY',
+            choices: ['rolling', 'blue-green', 'canary', 'ab', 'shadow'],
+            description: 'Kubernetes deployment and traffic strategy'
+        )
     }
 
     triggers {
         pollSCM('H/5 * * * *')
     }
 
+    environment {
+        LOCAL_IMAGE = 'aceest-fitness-app-ci'
+        K8S_NAMESPACE = 'aceest'
+    }
+
     stages {
-        stage('SCM Checkout') {
+        stage('Checkout') {
             steps {
                 checkout scm
+                script {
+                    env.GIT_SHA = sh(
+                        returnStdout: true,
+                        script: 'git rev-parse --short=7 HEAD'
+                    ).trim()
+                    env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA}"
+                }
             }
         }
 
-        stage('Static Lint Gate') {
+        stage('Build Container') {
             steps {
-                sh '''
-                    python3 -m venv venv || virtualenv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install flake8
-                    flake8 app/ tests/ --max-line-length=120
-                '''
+                sh 'docker build --pull -t "$LOCAL_IMAGE:$IMAGE_TAG" .'
             }
         }
 
-        stage('Build Docker Artifact') {
+        stage('Lint and Test in Container') {
             steps {
-                sh '''
-                    docker build -t ${APP_IMAGE}:${TAG} .
-                '''
+                script {
+                    sh 'mkdir -p reports'
+                    def testStatus = sh(
+                        returnStatus: true,
+                        script: '''
+                            docker run --rm \
+                                --user "$(id -u):$(id -g)" \
+                                -e ACEEST_DB=/tmp/aceest-test.db \
+                                -v "$WORKSPACE/reports:/reports" \
+                                "$LOCAL_IMAGE:$IMAGE_TAG" \
+                                sh -c 'flake8 app/ tests/ --max-line-length=120 && pytest tests/ -v --junitxml=/reports/junit.xml --cov=app --cov-report=xml:/reports/coverage.xml'
+                        '''
+                    )
+                    junit testResults: 'reports/junit.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: 'reports/**',
+                        allowEmptyArchive: true, fingerprint: true
+                    if (testStatus != 0) {
+                        error('Container lint or unit tests failed.')
+                    }
+                }
             }
         }
 
-        stage('Run In-Container Regression Tests') {
+        stage('SonarQube Quality Gate') {
             steps {
-                sh '''
-                    docker run --rm ${APP_IMAGE}:${TAG} pytest tests/ -v
-                '''
+                script {
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh "\"${scannerHome}/bin/sonar-scanner\""
+                    }
+                    timeout(time: 5, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Publish Versioned Image') {
+            when {
+                expression {
+                    env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'origin/main'
+                }
+            }
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKERHUB_USER',
+                    passwordVariable: 'DOCKERHUB_TOKEN'
+                )]) {
                     sh '''
-                        export PATH=/opt/sonar-scanner/bin:$PATH
-                        sonar-scanner \
-                        -Dsonar.host.url=http://localhost:9000 \
-                        -Dsonar.login=$SONAR_TOKEN
+                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                        printf '%s' "$DOCKERHUB_TOKEN" | \
+                            docker login --username "$DOCKERHUB_USER" --password-stdin
+                        docker tag "$LOCAL_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:$IMAGE_TAG"
+                        docker tag "$LOCAL_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:latest"
+                        docker push "$DOCKERHUB_REPO:$IMAGE_TAG"
+                        docker push "$DOCKERHUB_REPO:latest"
                     '''
                 }
             }
         }
 
-        stage('Deploy Docker Container') {
+        stage('Deploy to Kubernetes') {
+            when {
+                expression {
+                    env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'origin/main'
+                }
+            }
             steps {
-                sh '''
-                    docker rm -f ${APP_CONTAINER} || true
-                    docker run -d \\
-                        --name ${APP_CONTAINER} \\
-                        --restart unless-stopped \\
-                        -p ${APP_PORT}:5000 \\
-                        ${APP_IMAGE}:${TAG}
-                '''
+                withCredentials([file(
+                    credentialsId: 'kubeconfig',
+                    variable: 'KUBECONFIG_FILE'
+                )]) {
+                    sh '''
+                        export KUBECONFIG="$KUBECONFIG_FILE"
+                        IMAGE="$DOCKERHUB_REPO:$IMAGE_TAG" \
+                            K8S_NAMESPACE="$K8S_NAMESPACE" \
+                            sh k8s/deploy.sh "$DEPLOYMENT_STRATEGY"
+                    '''
+                }
             }
         }
     }
@@ -79,10 +140,10 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Jenkins Pipeline #${env.BUILD_NUMBER} deployed successfully."
+            echo "Build #${env.BUILD_NUMBER} passed quality checks."
         }
         failure {
-            echo "Jenkins Pipeline #${env.BUILD_NUMBER} failed."
+            echo "Build #${env.BUILD_NUMBER} failed; review deployment and rollback logs."
         }
     }
 }

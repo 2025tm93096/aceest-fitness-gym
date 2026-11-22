@@ -3,4 +3,7 @@ __pycache__/
 venv/
 .pytest_cache/
 *.db
+.coverage
+coverage.xml
+reports/
 .DS_Store
